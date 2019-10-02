@@ -1,6 +1,6 @@
-package data
+package prometheus
 
-// RangeResult holds the prometheus data from a range query
+// RangeResult holds the raw prometheus data from a range query
 type RangeResult struct {
 	Success string     `json:success`
 	Data    resultList `json:data`
@@ -12,8 +12,8 @@ type resultList struct {
 }
 
 type result struct {
-	Metric metric      `json:metric`
-	Values [][]float64 `json:values`
+	Metric metric `json:metric`
+	Values []interface{}
 }
 
 type metric struct {
@@ -23,4 +23,8 @@ type metric struct {
 	Namespace string `json:namespace`
 	Pod       string `json:pod`
 	Service   string `json:service`
+}
+
+// RangeData holds the database ready data converted from a RangeResult
+type RangeData struct {
 }

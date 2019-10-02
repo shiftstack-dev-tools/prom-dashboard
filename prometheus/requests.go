@@ -1,15 +1,18 @@
-package data
+package prometheus
 
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"time"
 )
 
 const (
-	timeout = 15
+	httpRequestTimeout = 5 * time.Second
+
+	//QueryTypeRange is a constant string used to identify ranged queries
+	QueryTypeRange = "range"
 )
 
 // Query is a generic way to build a prometheus query
@@ -21,18 +24,21 @@ type Query struct {
 }
 
 // GetData makes a GET query against prometheus and returns data
-func GetData(query *Query) (*RangeResult, error) {
+func (query *Query) GetData() (*RangeResult, error) {
 	if query == nil {
 		log.Fatal("query parameter can not be nil")
 	}
 	// Execute Range Query
-	if query.QueryType == "range" {
+	if query.QueryType == QueryTypeRange {
 		result, err := rangeQuery(query.BaseURL, &query.Params)
 		if err != nil {
-			return nil, fmt.Errorf("range query %s error: %v", query.Name, err)
+			return nil, fmt.Errorf("range query error: %v", err)
 		}
-		return result, err
+		return result, nil
 	}
+
+	// TODO(egarcia): implement proper http error handling
+	// TODO(egarcia): exponential backoff retry
 
 	return nil, nil
 }
@@ -51,26 +57,24 @@ func rangeQuery(baseURL string, params *map[string]string) (*RangeResult, error)
 		} else {
 			query = query + "&" + key + "=" + value
 		}
+		count++
 	}
 
-	// Execute Query
-	res, err := http.Get(query)
+	// Fetch time series Prometheus data
+	client := http.Client{Timeout: httpRequestTimeout}
+	res, err := client.Get(query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("http GET error: %v", err)
 	}
-
-	// Convert Results to Struct
-	rawResult, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	if err != nil {
-		return nil, err
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error %d: %s", res.StatusCode, res.Status)
 	}
-
+	decoder := json.NewDecoder(res.Body)
 	var result RangeResult
-	err = json.Unmarshal([]byte(rawResult), &result)
+	err = decoder.Decode(&result)
 	if err != nil {
 		return nil, err
 	}
-
 	return &result, nil
 }
