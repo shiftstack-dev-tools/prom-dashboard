@@ -17,10 +17,11 @@ const (
 
 // Query is a generic way to build a prometheus query
 type Query struct {
-	Name      string
-	BaseURL   string
-	QueryType string
-	Params    map[string]string
+	TestID     string            // UUID of the CI test the data is from
+	MetricName string            // Name of the prometheus metric you are querying for
+	BaseURL    string            // URL of the prometheus server you are querying
+	QueryType  string            // Type of prometheus query: instant, range
+	Params     map[string]string // Prometheus Query Parameters
 }
 
 // GetData makes a GET query against prometheus and returns data
