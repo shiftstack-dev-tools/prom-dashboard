@@ -1,18 +1,24 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"strconv"
 
-	"github.com/dev/prom-dashboard/prometheus"
+	"github.com/shiftstack-dev-tools/prom-dashboard/frontend"
+	"github.com/shiftstack-dev-tools/prom-dashboard/prometheus"
 )
 
 func main() {
 	const (
-		step              = "1m"
 		fsyncName         = "fsync"
 		backendCommitName = "backend_commit"
 	)
+
+	app := frontend.NewApp()
+	req, err := app.ReadInput()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	baseURL := "http://172.24.160.10:9090"
 	queries := []*prometheus.Query{}
@@ -43,21 +49,36 @@ func main() {
 
 	queries = append(queries, &backendCommit)
 
+	// Set Up CSV
+	flattenedData := [][]string{}
+
 	// Execute the Queries
-	for _, query := range queries {
-		// TODO(egarcia): make calls asynchronous
+	for uuid, query := range queries {
 		log.Printf("Querying %s data\n", query.MetricName)
+
+		// TODO(egarcia): make queries to the same prom asynchronous
 		query.BaseURL = baseURL
 		query.Params["start"] = startTime
 		query.Params["end"] = stopTime
-		query.Params["step"] = step
+		query.Params["step"] = req.Step
 		result, err := query.GetData()
 		if err != nil {
 			log.Fatalf("Failed to execute %s query: %v\n", query.MetricName, err)
 		}
 
-		val, err := result.Flatten()
-		fmt.Printf("%v\n", val)
+		vals, err := result.Flatten()
+		if err != nil {
+			log.Fatalf("Failed to flatten %s data: %v\n", query.MetricName, err)
+		}
+		for _, val := range vals {
+			data := []string{
+				strconv.Itoa(uuid),
+				query.TestID,
+				query.QueryType,
+			}
+			data = append(data, val...)
+			flattenedData = append(flattenedData, data)
+		}
 	}
 
 	/*
