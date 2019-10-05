@@ -1,6 +1,8 @@
 package prow
 
 import (
+	"bytes"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -38,17 +40,42 @@ func TestMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("while fetching the data: %v", err)
 	}
+	defer data.Close()
 
-	if want := "FAILURE"; want != data.Result {
-		t.Errorf("expected result to be %q, found %q", want, data.Result)
-	}
+	t.Run("Parses the build status", func(t *testing.T) {
+		if want := "FAILURE"; want != data.Result {
+			t.Errorf("expected result to be %q, found %q", want, data.Result)
+		}
+	})
 
-	expectedTime, err := time.Parse(time.RFC3339, "2019-10-01T14:17:19Z")
-	if err != nil {
-		panic(err)
-	}
+	t.Run("Parses the build time", func(t *testing.T) {
+		expectedStartTime, err := time.Parse(time.RFC3339, "2019-10-01T12:49:51Z")
+		if err != nil {
+			panic(err)
+		}
 
-	if have := data.FinishedAt; expectedTime != have {
-		t.Errorf("expected finish time to be %q, found %q", expectedTime, have)
-	}
+		if have := data.StartedAt; expectedStartTime != have {
+			t.Errorf("expected start time to be %q, found %q", expectedStartTime, have)
+		}
+
+		expectedFinishTime, err := time.Parse(time.RFC3339, "2019-10-01T14:17:19Z")
+		if err != nil {
+			panic(err)
+		}
+
+		if have := data.FinishedAt; expectedFinishTime != have {
+			t.Errorf("expected finish time to be %q, found %q", expectedFinishTime, have)
+		}
+	})
+
+	t.Run("Provides the Prometheus data", func(t *testing.T) {
+		have, err := ioutil.ReadAll(data)
+		if err != nil {
+			t.Errorf("while reading the data: %v", err)
+		}
+
+		if !bytes.Equal(have, tarball) {
+			t.Errorf("expected tarball to be %q, found %q", tarball, have)
+		}
+	})
 }
