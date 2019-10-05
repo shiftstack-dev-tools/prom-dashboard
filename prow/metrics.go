@@ -1,5 +1,3 @@
-// Package prow downloads Prometheus data for a given CI run, alongside with
-// some metadata.
 package prow
 
 import (
