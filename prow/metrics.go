@@ -2,23 +2,24 @@ package prow
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
 type MetricsData struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
-	Result     string
-
-	io.ReadCloser
+	PromFile   string
 }
 
 // Metrics returns an io.ReadCloser that streams the tarball containing the
 // Prometheus data. It is the caller responsibility to call Close on the
 // returned MetricsData.
-func Metrics(baseURL, jobName, jobID string) (MetricsData, error) {
+func Metrics(baseURL, jobName, jobID, tarpath string) (MetricsData, error) {
 	var (
 		m      MetricsData
 		client http.Client
@@ -62,19 +63,49 @@ func Metrics(baseURL, jobName, jobID string) (MetricsData, error) {
 		}
 
 		m.FinishedAt = finished.time
-		m.Result = finished.result
+		// how to get success/fail
+		//	m.Result = finished.result
 	}
 
-	// Prepare the Prometheus data
-	//TODO: can we generalise "e2e-openstack"?
-	req, err := http.NewRequest("GET", baseURL+"/"+jobName+"/"+jobID+"/artifacts/e2e-openstack/metrics/prometheus.tar", nil)
+	// Get Tarball
+	{
+		m.PromFile = filepath.Join(tarpath, "/prometheus.tar")
+		err := downloadFile(m.PromFile, baseURL+"/"+jobName+"/"+jobID+"/artifacts/e2e-openstack/metrics/prometheus.tar")
+		if err != nil {
+			return m, fmt.Errorf("Failed to downlad tarball: %v", err)
+		}
+	}
+
+	return m, nil
+
+}
+
+func downloadFile(filepath string, url string) error {
+
+	// Create the file
+	out, err := os.Create(filepath)
 	if err != nil {
-		return m, err
+		return err
+	}
+	defer out.Close()
+
+	// Get the data
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Check server response
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	res, err := client.Do(req)
+	// Writer the body to file
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
 
-	m.ReadCloser = res.Body
-
-	return m, err
+	return nil
 }

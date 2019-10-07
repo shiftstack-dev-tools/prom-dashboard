@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	httpRequestTimeout = 5 * time.Second
+	httpRequestTimeout = 10 * time.Second
 
 	//QueryTypeRange is a constant string used to identify ranged queries
 	QueryTypeRange = "range"
@@ -17,7 +17,6 @@ const (
 
 // Query is a generic way to build a prometheus query
 type Query struct {
-	TestID     string            // UUID of the CI test the data is from
 	MetricName string            // Name of the prometheus metric you are querying for
 	BaseURL    string            // URL of the prometheus server you are querying
 	QueryType  string            // Type of prometheus query: instant, range
@@ -30,18 +29,25 @@ func (query *Query) GetData() (*RangeResult, error) {
 		log.Fatal("query parameter can not be nil")
 	}
 	// Execute Range Query
-	if query.QueryType == QueryTypeRange {
-		result, err := rangeQuery(query.BaseURL, &query.Params)
-		if err != nil {
-			return nil, fmt.Errorf("range query error: %v", err)
-		}
-		return result, nil
-	}
+	retries := 5
+	var err error
+	var result *RangeResult
 
 	// TODO(egarcia): implement proper http error handling
-	// TODO(egarcia): exponential backoff retry
+	for retries > 0 {
+		if query.QueryType == QueryTypeRange {
+			result, err = rangeQuery(query.BaseURL, &query.Params)
+			if err != nil {
+				time.Sleep(5 * time.Second)
+				retries--
+			} else {
+				return result, nil
+			}
+		}
+	}
 
-	return nil, nil
+	return nil, err
+
 }
 
 func rangeQuery(baseURL string, params *map[string]string) (*RangeResult, error) {

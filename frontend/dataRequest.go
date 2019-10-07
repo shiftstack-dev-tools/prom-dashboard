@@ -3,8 +3,6 @@ package frontend
 import (
 	"fmt"
 	"regexp"
-
-	"github.com/shiftstack-dev-tools/prom-dashboard/prometheus"
 )
 
 // DataRequest stores user data requests from CI prom
@@ -69,28 +67,4 @@ func (req *DataRequest) Validate() error {
 	}
 
 	return nil
-}
-
-// GenerateQueries generates the prometheus queries based on the
-// the values in the DataRequest object
-func (req *DataRequest) GenerateQueries() (*[][]*prometheus.Query, error) {
-	// Queries holds a set of queries organized by the ID of the test they are against
-	queries := [][]*prometheus.Query{}
-	for _, id := range req.TestIDs {
-		// q holds each query executed against a testID
-		q := []*prometheus.Query{}
-		for _, metric := range req.TimeSeries {
-			query := prometheus.Query{
-				TestID:     id,
-				MetricName: fmt.Sprintf("histogram_quantile(0.99,rate(%s[%s]))", metric, req.Step),
-				QueryType:  prometheus.QueryTypeRange,
-				Params: map[string]string{
-					"step": req.Step,
-				},
-			}
-			q = append(q, &query)
-		}
-		queries = append(queries, q)
-	}
-	return &queries, nil
 }

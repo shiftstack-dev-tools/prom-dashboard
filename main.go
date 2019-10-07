@@ -1,92 +1,134 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/csv"
+	"fmt"
+	"io"
 	"log"
 	"os"
-	"strconv"
+	"os/exec"
+	"path/filepath"
+	"time"
 
 	"github.com/shiftstack-dev-tools/prom-dashboard/frontend"
 	"github.com/shiftstack-dev-tools/prom-dashboard/prometheus"
+	"github.com/shiftstack-dev-tools/prom-dashboard/prow"
 )
 
 func main() {
 	const (
 		fsyncName         = "fsync"
 		backendCommitName = "backend_commit"
+		baseURL           = "https://gcsweb-ci.svc.ci.openshift.org/gcs/origin-ci-test/logs"
+		jobName           = "release-openshift-ocp-installer-e2e-openstack-4.2"
 	)
 
 	app := frontend.NewApp()
+	err := app.ValidateInput()
 	req, err := app.ReadInput()
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	baseURL := "http://172.24.160.10:9090"
-	queries := []*prometheus.Query{}
-	startTime := "2019-09-23T18:00:00Z"
-	stopTime := "2019-09-24T18:00:00Z"
+	// make prom-data dir
+	promDir := filepath.Join(app.DataDir, "/promData")
+	os.Mkdir(promDir, os.ModePerm)
 
-	// Set up fsync query
-	fsyncParams := make(map[string]string)
-	fsyncParams["query"] = "histogram_quantile(0.99,rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m]))"
-
-	fsync := prometheus.Query{
-		MetricName: fsyncName,
-		QueryType:  prometheus.QueryTypeRange,
-		Params:     fsyncParams,
-	}
-
-	queries = append(queries, &fsync)
-
-	// Set up backend commit query
-	bcParams := make(map[string]string)
-	bcParams["query"] = "histogram_quantile(0.99,rate(etcd_disk_backend_commit_duration_seconds_bucket[5m]))"
-
-	backendCommit := prometheus.Query{
-		MetricName: backendCommitName,
-		QueryType:  prometheus.QueryTypeRange,
-		Params:     bcParams,
-	}
-
-	queries = append(queries, &backendCommit)
-
-	// Set Up CSV
+	// Collect Data
 	flattenedData := [][]string{}
-
-	// Execute the Queries
-	for uuid, query := range queries {
-		log.Printf("Querying %s data\n", query.MetricName)
-
-		// TODO(egarcia): make queries to the same prom asynchronous
-		query.BaseURL = baseURL
-		query.Params["start"] = startTime
-		query.Params["end"] = stopTime
-		query.Params["step"] = req.Step
-		result, err := query.GetData()
+	for _, id := range req.TestIDs {
+		log.Printf("Preparing test %s", id)
+		idDir := filepath.Join(promDir, "/"+id)
+		fmt.Println(idDir)
+		os.Mkdir(idDir, os.ModePerm)
 		if err != nil {
-			log.Fatalf("Failed to execute %s query: %v\n", query.MetricName, err)
+			log.Fatalf("couldnt create file: %v", err)
 		}
 
-		vals, err := result.Flatten()
+		// Download Metrics
+		data, err := prow.Metrics(baseURL, jobName, id, idDir)
 		if err != nil {
-			log.Fatalf("Failed to flatten %s data: %v\n", query.MetricName, err)
+			log.Fatalf("Failed to get metrics: %v", err)
 		}
-		for _, val := range vals {
-			data := []string{
-				strconv.Itoa(uuid),
-				query.TestID,
-				query.QueryType,
+
+		// Untar prom file
+		promData := filepath.Join(idDir, "/prometheus")
+		os.Mkdir(promData, os.ModePerm)
+		if err != nil {
+			log.Fatalf("couldnt create file: %v", err)
+		}
+
+		err = Untar(promData, filepath.Join(idDir, "/prometheus.tar"))
+		if err != nil {
+			log.Fatalf("couldnt untar file: %v", err)
+		}
+
+		// CHMOD all files in untar'd prom dir to 777
+		cmd := exec.Command("chmod", []string{
+			"-R",
+			"777",
+			promData,
+		}...)
+
+		msg, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Fatalf("couldnt chmod prom data: %s: %v", msg, err)
+		}
+
+		// Stand up docker container
+		port := "9090"
+		hostpath, err := filepath.Abs(promData)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		container, err := prometheus.Up(port, hostpath)
+		if err != nil {
+			log.Fatalf("failed to create docker container: %v", err)
+		}
+		defer prometheus.Down(container)
+
+		for _, metric := range req.TimeSeries {
+			query := prometheus.Query{
+				BaseURL:    fmt.Sprintf("http://localhost:%s", port),
+				MetricName: metric,
+				QueryType:  prometheus.QueryTypeRange,
+				Params: map[string]string{
+					"query": fmt.Sprintf("histogram_quantile(0.99,rate(%s[%s]))", metric, req.Step),
+					"step":  req.Step,
+					"start": data.StartedAt.Format(time.RFC3339),
+					"end":   data.FinishedAt.Format(time.RFC3339),
+				},
 			}
-			data = append(data, val...)
-			flattenedData = append(flattenedData, data)
+
+			res, err := query.GetData()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			vals, err := res.Flatten()
+			if err != nil {
+				log.Fatalf("Failed to flatten %s data: %v\n", query.MetricName, err)
+			}
+			for _, val := range vals {
+				data := []string{
+					id,
+					metric,
+				}
+				data = append(data, val...)
+				flattenedData = append(flattenedData, data)
+			}
+
+			log.Printf("Data gathered for test %s", id)
 		}
 	}
 
 	// Write the CSV File
-	file, err := os.Create(filename)
+	resFile := filepath.Join(app.DataDir, "/results.csv")
+	file, err := os.Create(resFile)
 	if err != nil {
-		log.Fatalf("Could not write file %s: %v", filename, err)
+		log.Fatalf("Could not write file %s: %v", resFile, err)
 	}
 	defer file.Close()
 
@@ -96,7 +138,80 @@ func main() {
 	for _, row := range flattenedData {
 		err := writer.Write(row)
 		if err != nil {
-			log.Fatalf("Could not write file %s: %v", filename, err)
+			log.Fatalf("Could not write file %s: %v", resFile, err)
+		}
+	}
+}
+
+// Untar takes a destination path and a reader; a tar reader loops over the tarfile
+// creating the file structure at 'dst' along the way, and writing any files
+// Source https://medium.com/@skdomino/taring-untaring-files-in-go-6b07cf56bc07
+func Untar(dst, src string) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzr, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+
+		switch {
+
+		// if no more files are found return
+		case err == io.EOF:
+			return nil
+
+		// return any other error
+		case err != nil:
+			return err
+
+		// if the header is nil, just skip it (not sure how this happens)
+		case header == nil:
+			continue
+		}
+
+		// the target location where the dir/file should be created
+		target := filepath.Join(dst, header.Name)
+
+		// the following switch could also be done using fi.Mode(), not sure if there
+		// a benefit of using one vs. the other.
+		// fi := header.FileInfo()
+
+		// check the file type
+		switch header.Typeflag {
+
+		// if its a dir and it doesn't exist create it
+		case tar.TypeDir:
+			if _, err := os.Stat(target); err != nil {
+				if err := os.MkdirAll(target, 0755); err != nil {
+					return err
+				}
+			}
+
+		// if it's a file create it
+		case tar.TypeReg:
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+
+			// copy over contents
+			if _, err := io.Copy(f, tr); err != nil {
+				return err
+			}
+
+			// manually close here after each file operation; defering would cause each file close
+			// to wait until all operations have completed.
+			f.Close()
 		}
 	}
 }

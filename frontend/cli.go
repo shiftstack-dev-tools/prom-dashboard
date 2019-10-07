@@ -13,7 +13,7 @@ import (
 // and the inputs expected from the user
 type CliApp struct {
 	ConfigPath string
-	OutFile    string
+	DataDir    string
 	App        *cli.App
 }
 
@@ -36,15 +36,13 @@ func NewApp() *CliApp {
 			Destination: &app.ConfigPath,
 		},
 		cli.StringFlag{
-			Name:        "out, o",
-			Usage:       "Write CSV to `FILE`",
-			Value:       "prom-data.csv",
-			Destination: &app.OutFile,
+			Name:        "o, out",
+			Usage:       "dir used for output and metadata",
+			Destination: &app.DataDir,
 		},
 	}
 
-	app.App.Action = noArgs
-
+	app.App.Action = validateFlags
 	// Authors
 	emilio := cli.Author{
 		Name:  "Emilio Garcia",
@@ -59,7 +57,36 @@ func NewApp() *CliApp {
 	return &app
 }
 
-func noArgs(c *cli.Context) error {
+func validateFlags(c *cli.Context) error {
+	if c.NumFlags() < 2 {
+		cli.ShowAppHelp(c)
+		return cli.NewExitError("please set both flags", 2)
+	}
+	return nil
+}
+
+// ValidateInput checks that the path inputs exist
+func (app *CliApp) ValidateInput() error {
+	err := validPath(app.DataDir)
+	if err != nil {
+		return err
+	}
+
+	err = validPath(app.ConfigPath)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func validPath(path string) error {
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("invalid path %s: %v", path, err)
+	} else if err != nil {
+		return fmt.Errorf("could not stat %s: %v", path, err)
+	}
+
 	return nil
 }
 
@@ -77,7 +104,7 @@ func (app *CliApp) ReadInput() (*DataRequest, error) {
 
 	err = request.Validate()
 	if err != nil {
-		return nil, fmt.Errorf("Failed validation: %v", err)
+		return nil, fmt.Errorf("Invalid Config: %v", err)
 	}
 
 	return request, nil

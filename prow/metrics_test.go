@@ -12,6 +12,7 @@ import (
 
 // const baseURL = "https://gcsweb-ci.svc.ci.openshift.org/gcs/origin-ci-test/logs/"
 
+// WARN BROKEN
 func TestMetrics(t *testing.T) {
 	baseURL := "/release-openshift-ocp-installer-e2e-openstack-4.2/16"
 	tarball := []byte("This text represents the binary tarball.")
