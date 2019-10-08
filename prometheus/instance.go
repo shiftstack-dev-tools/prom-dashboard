@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -69,6 +68,9 @@ func Down(id string) error {
 		return fmt.Errorf("unable to delete container %s: %v", id, err)
 	}
 
-	time.Sleep(10 * time.Second)
+	_, err = cli.ContainerWait(context.Background(), id)
+	if err != nil {
+		return fmt.Errorf("failed to wait for container %s to stop", id)
+	}
 	return nil
 }

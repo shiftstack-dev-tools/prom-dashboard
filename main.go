@@ -41,7 +41,6 @@ func main() {
 	for _, id := range req.TestIDs {
 		log.Printf("Preparing test %s", id)
 		idDir := filepath.Join(promDir, "/"+id)
-		fmt.Println(idDir)
 		os.Mkdir(idDir, os.ModePerm)
 		if err != nil {
 			log.Fatalf("couldnt create file: %v", err)
@@ -87,7 +86,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to create docker container: %v", err)
 		}
-		defer prometheus.Down(container)
 
 		for _, metric := range req.TimeSeries {
 			query := prometheus.Query{
@@ -120,7 +118,11 @@ func main() {
 				flattenedData = append(flattenedData, data)
 			}
 
-			log.Printf("Data gathered for test %s", id)
+			log.Printf("%s gathered for test %s", metric, id)
+		}
+		err = prometheus.Down(container)
+		if err != nil {
+			log.Fatalln(err)
 		}
 	}
 
