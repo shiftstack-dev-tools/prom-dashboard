@@ -59,7 +59,20 @@ func main() {
 			log.Fatalf("couldnt create file: %v", err)
 		}
 
-		err = Untar(promData, filepath.Join(idDir, "/prometheus.tar"))
+		tarfile := filepath.Join(idDir, "/prometheus.tar")
+
+		// If the file is less than 50 Kb, it is definately a dud --> skip data collection
+		// for reference, they are usually upwards of 50 Mb tar'd
+		f, err := os.Stat(tarfile)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if f.Size() < 50000 {
+			log.Printf("Prometheus data from job ID %s is either emtpy or corrupted. Skipping data collection...", id)
+			continue
+		}
+
+		err = Untar(promData, tarfile)
 		if err != nil {
 			log.Fatalf("couldnt untar file: %v", err)
 		}

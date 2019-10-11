@@ -5,6 +5,7 @@ This tool can be uses to fetch prometheus metrics from a list of specified CI ru
 ## Usage
 
 Running it is simple, it takes a yaml file and a directory as input. The directory should be empty.
+
 ```sh
 go run main.go -c <yaml config> -o <metadata and output dir>
 ```
@@ -33,6 +34,7 @@ step: 5m
 ```
 
 ## Output
+
 The final output of a run will be written to `output-dir/results.csv`. This csv file has the following schema:
 
 | TestID | Metric | Node | Time Series Data |
