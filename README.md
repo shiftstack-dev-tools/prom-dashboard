@@ -37,7 +37,7 @@ step: 5m
 
 The final output of a run will be written to `output-dir/results.csv`. This csv file has the following schema:
 
-| TestID | Metric | Node | Time Series Data |
-| ---    | ---    | ---  | ---              |
+| TestID | Metric | Start Time | End Time | Step | Node | Time Series Data |
+| ---    | ---    | ---  | --- | ---      | ---  | ---  | ---            |
 
-The Time series data is in time differentials based on the `step` you provided. So the first cell is 0, and the second is +`step`.
+The Time series data is in time differentials based on the `step` you provided. So the first cell is 0 `steps` from the start time, and the second is +`step`. The data ends at the specified end time.

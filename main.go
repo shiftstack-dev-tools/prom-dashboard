@@ -40,6 +40,7 @@ func main() {
 	flattenedData := [][]string{}
 	for _, id := range req.TestIDs {
 		log.Printf("Preparing test %s", id)
+
 		idDir := filepath.Join(promDir, "/"+id)
 		os.Mkdir(idDir, os.ModePerm)
 		if err != nil {
@@ -69,6 +70,16 @@ func main() {
 		}
 		if f.Size() < 50000 {
 			log.Printf("Prometheus data from job ID %s is either emtpy or corrupted. Skipping data collection...", id)
+
+			// If no prom data, then just record the start and end time of job and move to next job
+			data := []string{
+				id,
+				"",
+				data.StartedAt.String(),
+				data.FinishedAt.String(),
+				req.Step,
+			}
+			flattenedData = append(flattenedData, data)
 			continue
 		}
 
@@ -126,6 +137,9 @@ func main() {
 				data := []string{
 					id,
 					metric,
+					data.StartedAt.String(),
+					data.FinishedAt.String(),
+					req.Step,
 				}
 				data = append(data, val...)
 				flattenedData = append(flattenedData, data)
