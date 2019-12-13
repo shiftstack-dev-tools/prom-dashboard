@@ -22,7 +22,7 @@ func main() {
 		fsyncName         = "fsync"
 		backendCommitName = "backend_commit"
 		baseURL           = "https://gcsweb-ci.svc.ci.openshift.org/gcs/origin-ci-test/logs"
-		jobName           = "release-openshift-ocp-installer-e2e-openstack-4.2"
+		jobName           = "release-openshift-ocp-installer-e2e-openstack-4.3"
 	)
 
 	app := frontend.NewApp()
